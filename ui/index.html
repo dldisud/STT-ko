@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Korean STT</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Titlebar -->
+<div class="titlebar" id="titlebar">
+  <span class="titlebar-logo">Korean STT</span>
+  <span class="titlebar-sep">|</span>
+  <span class="titlebar-page">Dashboard</span>
+  <span class="titlebar-spacer"></span>
+  <button class="theme-toggle" id="themeToggle" title="테마 전환">◑</button>
+</div>
+
+<!-- Dashboard -->
+<div class="dashboard">
+
+  <!-- Left Sidebar -->
+  <div class="sidebar">
+
+    <!-- File Input -->
+    <div class="sidebar-section">
+      <div class="section-label">INPUT</div>
+      <div class="dropzone" id="dropzone">
+        <div class="drop-icon">+</div>
+        <div class="drop-label"><strong>파일 선택</strong> 또는 드래그</div>
+        <div class="drop-hint">mp4, mkv, avi, wav, mp3</div>
+      </div>
+      <div class="file-loaded hidden" id="fileLoaded">
+        <span class="fl-icon">🎬</span>
+        <div class="fl-info">
+          <div class="fl-name" id="fileName">-</div>
+          <div class="fl-meta" id="fileMeta">-</div>
+        </div>
+        <span class="fl-remove" id="fileRemove">✕</span>
+      </div>
+    </div>
+
+    <!-- Model Selection -->
+    <div class="sidebar-section">
+      <div class="section-label">MODEL</div>
+      <div id="modelList"></div>
+    </div>
+
+    <!-- System -->
+    <div class="sidebar-section">
+      <div class="section-label">SYSTEM</div>
+      <div class="sys-info" id="sysInfo">
+        <div class="sys-row"><span class="sys-key">GPU</span><span class="sys-val" id="sysGpu">-</span></div>
+        <div class="sys-row"><span class="sys-key">VRAM</span><span class="sys-val" id="sysVram">-</span></div>
+        <div class="sys-row"><span class="sys-key">ffmpeg</span><span class="sys-val" id="sysFfmpeg">-</span></div>
+      </div>
+    </div>
+
+    <!-- Generate Button -->
+    <div class="sidebar-action">
+      <button class="btn-generate" id="btnGenerate" disabled>자막 생성</button>
+    </div>
+  </div>
+
+  <!-- Right Content -->
+  <div class="content">
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <div class="tab active" data-tab="preview">자막 미리보기</div>
+      <div class="tab" data-tab="log">로그</div>
+    </div>
+
+    <!-- Result Area -->
+    <div class="result-panel">
+
+      <!-- Progress (hidden by default) -->
+      <div class="progress-card hidden" id="progressCard">
+        <div class="pc-header">
+          <span class="pc-title" id="pcTitle">준비 중</span>
+          <span class="pc-percent" id="pcPercent">0%</span>
+        </div>
+        <div class="pc-bar"><div class="pc-bar-fill" id="pcBarFill"></div></div>
+        <div class="pc-steps" id="pcSteps">
+          <div class="pc-step" data-step="extract"><span class="step-dot"></span>오디오 추출</div>
+          <div class="pc-step" data-step="load"><span class="step-dot"></span>모델 로딩</div>
+          <div class="pc-step" data-step="transcribe"><span class="step-dot"></span>트랜스크립션</div>
+          <div class="pc-step" data-step="srt"><span class="step-dot"></span>SRT 생성</div>
+        </div>
+      </div>
+
+      <!-- Tab: Preview -->
+      <div class="tab-content active" data-tab="preview">
+        <!-- Empty state -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">📝</div>
+          <div class="empty-text">파일을 선택하고 자막을 생성하세요</div>
+        </div>
+        <!-- SRT viewer (hidden by default) -->
+        <div class="srt-viewer hidden" id="srtViewer">
+          <div class="srt-header">
+            <span class="srt-filename" id="srtFilename">-</span>
+            <div class="srt-actions">
+              <button class="srt-btn srt-btn-copy" id="btnCopy">복사</button>
+              <button class="srt-btn srt-btn-save" id="btnSave">SRT 저장</button>
+            </div>
+          </div>
+          <div class="srt-body" id="srtBody"></div>
+        </div>
+      </div>
+
+      <!-- Tab: Log -->
+      <div class="tab-content" data-tab="log">
+        <div class="log-viewer" id="logViewer"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="statusbar">
+    <div class="st-item"><span class="st-dot" id="stFfmpeg"></span>ffmpeg</div>
+    <div class="st-item"><span class="st-dot" id="stCuda"></span>CUDA</div>
+    <div class="st-item"><span class="st-dot" id="stMoonshine"></span>Moonshine</div>
+    <div class="st-item"><span class="st-dot" id="stQwen"></span>Qwen3</div>
+    <span class="st-spacer"></span>
+    <span class="st-version">v1.0.0</span>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

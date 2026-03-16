@@ -1,0 +1,10 @@
+﻿Install Notice
+
+This app is designed for offline STT use and bundles large model files.
+Please check free disk space before installation.
+
+- Recommended free space: at least 12 GB
+- Recommended OS: Windows 10/11 64-bit
+- Qwen3 model requires NVIDIA CUDA GPU
+
+If ffmpeg or model files are missing, place them in the app folder and restart the app.
