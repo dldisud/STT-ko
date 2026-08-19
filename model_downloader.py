@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import inspect
 import shutil
 import threading
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from settings import MODEL_DIR_NAMES, MODEL_REPO_IDS, model_status
 
 _download_lock = threading.Lock()
+
+_MIN_FREE_BYTES = {
+    "moonshine": 300_000_000,
+    "qwen3": 6_000_000_000,
+}
 
 
 def _huggingface_hub_available() -> bool:
@@ -16,6 +22,34 @@ def _huggingface_hub_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def _format_bytes(num_bytes: int) -> str:
+    if num_bytes >= 1_000_000_000:
+        gb = num_bytes / 1_000_000_000
+        if gb >= 10:
+            return f"{gb:.0f}GB"
+        text = f"{gb:.1f}GB"
+        return text.replace(".0GB", "GB")
+    return f"{max(num_bytes, 0) // 1_000_000}MB"
+
+
+def _snapshot_download_kwargs(repo_id: str, target_dir: Path) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {
+        "repo_id": repo_id,
+        "local_dir": str(target_dir),
+    }
+    try:
+        from huggingface_hub import snapshot_download
+
+        params = inspect.signature(snapshot_download).parameters
+        # Older hub versions symlink large files; that breaks on Windows
+        # without Developer Mode and leaves "ready" files that cannot load.
+        if "local_dir_use_symlinks" in params:
+            kwargs["local_dir_use_symlinks"] = False
+    except Exception:
+        pass
+    return kwargs
 
 
 def download_model(
@@ -39,22 +73,31 @@ def download_model(
         return False, "다른 모델을 다운로드 중입니다. 완료 후 다시 시도하세요."
 
     try:
+        try:
+            models_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return False, f"모델 폴더를 만들 수 없습니다: {exc}"
+
         target_dir = models_dir / dir_name
 
-        free_space = shutil.disk_usage(models_dir).free
-        min_space = 6_000_000_000 if model_name == "qwen3" else 300_000_000
+        try:
+            free_space = shutil.disk_usage(models_dir).free
+        except OSError as exc:
+            return False, f"디스크 공간을 확인할 수 없습니다: {exc}"
+
+        min_space = _MIN_FREE_BYTES.get(model_name, 300_000_000)
         if free_space < min_space:
-            return False, f"디스크 공간이 부족합니다. 최소 {min_space // 1_000_000_000}GB 필요 (현재 {free_space // 1_000_000_000}GB 남음)"
+            return False, (
+                f"디스크 공간이 부족합니다. 최소 {_format_bytes(min_space)} 필요 "
+                f"(현재 {_format_bytes(free_space)} 남음)"
+            )
 
         if progress_callback:
             progress_callback(f"{repo_id} 다운로드 시작...")
 
         from huggingface_hub import snapshot_download
 
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=str(target_dir),
-        )
+        snapshot_download(**_snapshot_download_kwargs(repo_id, target_dir))
 
         if progress_callback:
             progress_callback("다운로드 완료. 무결성 검증 중...")

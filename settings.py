@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 
 MODEL_REPO_IDS: Dict[str, str] = {
@@ -89,17 +90,64 @@ def model_ready(model_name: str, model_dir: Path) -> bool:
     return ok
 
 
-def discover_ffmpeg_exe(app_root: Path) -> Optional[Path]:
+def _ffmpeg_names() -> tuple[str, ...]:
+    if sys.platform == "win32":
+        return ("ffmpeg.exe",)
+    return ("ffmpeg.exe", "ffmpeg")
+
+
+def _looks_like_ffmpeg(path: Path) -> bool:
+    return path.exists() and path.is_file()
+
+
+def _search_ffmpeg_under(root: Path) -> Optional[Path]:
+    root = root.resolve()
+    for name in _ffmpeg_names():
+        direct = root / "ffmpeg" / "bin" / name
+        if _looks_like_ffmpeg(direct):
+            return direct
+
+        nested = root / "bin" / name
+        if _looks_like_ffmpeg(nested):
+            return nested
+
+    for name in _ffmpeg_names():
+        candidates = list(root.glob(f"ffmpeg-*/bin/{name}"))
+        if candidates:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return candidates[0]
+    return None
+
+
+def discover_ffmpeg_exe(
+    app_root: Path,
+    extra_roots: Optional[Iterable[Path]] = None,
+) -> Optional[Path]:
     app_root = app_root.resolve()
+    roots: list[Path] = [app_root]
 
-    direct = app_root / "ffmpeg" / "bin" / "ffmpeg.exe"
-    if direct.exists() and direct.is_file():
-        return direct
+    internal = app_root / "_internal"
+    if internal.exists():
+        roots.append(internal)
 
-    candidates = list(app_root.glob("ffmpeg-*/bin/ffmpeg.exe"))
-    if candidates:
-        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        return candidates[0]
+    if extra_roots:
+        for extra in extra_roots:
+            if extra is None:
+                continue
+            roots.append(Path(extra))
+
+    seen: set[Path] = set()
+    for root in roots:
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        found = _search_ffmpeg_under(resolved)
+        if found:
+            return found
 
     from_path = shutil.which("ffmpeg")
     if from_path:
@@ -108,10 +156,74 @@ def discover_ffmpeg_exe(app_root: Path) -> Optional[Path]:
     return None
 
 
+def resolve_resource_dir(
+    frozen: Optional[bool] = None,
+    executable_path: Optional[Path] = None,
+    meipass: Optional[Path] = None,
+) -> Path:
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if not frozen:
+        return Path(__file__).resolve().parent
+
+    if meipass is None:
+        raw = getattr(sys, "_MEIPASS", None)
+        if raw:
+            meipass = Path(raw)
+    if meipass is not None:
+        return Path(meipass).resolve()
+
+    exe_parent = (executable_path or Path(sys.executable)).resolve().parent
+    internal = exe_parent / "_internal"
+    if internal.exists():
+        return internal
+    return exe_parent
+
+
+def _dir_is_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".korean_stt_write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def user_data_root() -> Path:
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "KoreanSTT"
+    return Path.home() / ".korean-stt"
+
+
+def resolve_data_root(app_root: Path, frozen: bool) -> Path:
+    if not frozen:
+        return app_root
+    if _dir_is_writable(app_root):
+        return app_root
+    return user_data_root()
+
+
+def _pick_model_dir(app_root: Path, data_root: Path, dirname: str, model_name: str) -> Path:
+    bundled = app_root / dirname
+    preferred = data_root / dirname
+    if bundled.exists() and model_ready(model_name, bundled):
+        return bundled
+    if preferred.exists() and model_ready(model_name, preferred):
+        return preferred
+    if bundled.exists() and not preferred.exists():
+        return bundled
+    return preferred
+
+
 def resolve_app_paths(
     base_dir: Optional[Path] = None,
     frozen: Optional[bool] = None,
     executable_path: Optional[Path] = None,
+    meipass: Optional[Path] = None,
 ) -> AppPaths:
     if frozen is None:
         frozen = bool(getattr(sys, "frozen", False))
@@ -124,11 +236,24 @@ def resolve_app_paths(
     else:
         app_root = Path(__file__).resolve().parent
 
-    models_dir = app_root
-    ffmpeg_exe = discover_ffmpeg_exe(app_root)
-    temp_dir = app_root / "temp"
-    moonshine_model_dir = models_dir / "moonshine-tiny-ko"
-    qwen3_model_dir = models_dir / "Qwen3-ASR-1.7B"
+    data_root = resolve_data_root(app_root, frozen)
+    extra_roots: list[Path] = []
+    if meipass is None and frozen:
+        raw = getattr(sys, "_MEIPASS", None)
+        if raw:
+            meipass = Path(raw)
+    if meipass is not None:
+        extra_roots.append(Path(meipass))
+
+    models_dir = data_root
+    ffmpeg_exe = discover_ffmpeg_exe(app_root, extra_roots=extra_roots)
+    temp_dir = data_root / "temp"
+    moonshine_model_dir = _pick_model_dir(
+        app_root, data_root, MODEL_DIR_NAMES["moonshine"], "moonshine"
+    )
+    qwen3_model_dir = _pick_model_dir(
+        app_root, data_root, MODEL_DIR_NAMES["qwen3"], "qwen3"
+    )
 
     return AppPaths(
         app_root=app_root,
@@ -142,3 +267,4 @@ def resolve_app_paths(
 
 def ensure_runtime_dirs(paths: AppPaths) -> None:
     paths.temp_dir.mkdir(parents=True, exist_ok=True)
+    paths.models_dir.mkdir(parents=True, exist_ok=True)

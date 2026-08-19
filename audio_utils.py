@@ -2,10 +2,24 @@
 
 import shutil
 import subprocess
+import sys
+import wave
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 PathLike = Union[str, Path]
+
+
+def _ffmpeg_run_kwargs() -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return kwargs
 
 
 def _resolve_ffmpeg_command(ffmpeg_exe: Optional[PathLike] = None) -> Optional[str]:
@@ -27,11 +41,14 @@ def check_ffmpeg(ffmpeg_exe: Optional[PathLike] = None) -> tuple[bool, str]:
         return False, "ffmpeg not found"
 
     try:
+        version_kwargs = _ffmpeg_run_kwargs()
+        version_kwargs["stdout"] = subprocess.DEVNULL
+        version_kwargs["stderr"] = subprocess.DEVNULL
+        version_kwargs.pop("capture_output", None)
         subprocess.run(
             [cmd, "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
             check=True,
+            **version_kwargs,
         )
         return True, cmd
     except Exception:
@@ -67,9 +84,21 @@ def extract_audio(
         dst,
     ]
 
-    proc = subprocess.run(args, capture_output=True, text=True)
+    proc = subprocess.run(args, **_ffmpeg_run_kwargs())
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
         raise RuntimeError(f"audio extraction failed: {stderr}")
 
     return dst
+
+
+def wav_duration_seconds(path: PathLike) -> float:
+    try:
+        with wave.open(str(path), "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+        if rate <= 0 or frames <= 0:
+            return 0.0
+        return frames / float(rate)
+    except Exception:
+        return 0.0

@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ui', 'ui'), ('D:\\stt\\ffmpeg-2025-03-10-git-87e5da9067-full_build', 'ffmpeg')]
+datas = [('ui', 'ui')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('webview')

@@ -5,7 +5,14 @@ from typing import Iterable, Mapping, Optional
 
 
 def _to_srt_ts(seconds: float) -> str:
-    total_ms = int(max(seconds, 0.0) * 1000)
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        value = 0.0
+    if value != value:  # NaN
+        value = 0.0
+    # int(seconds * 1000) truncates; 0.1 * 1000 is 99.999... so Premiere cues drift.
+    total_ms = int(round(max(value, 0.0) * 1000.0))
     hours = total_ms // 3_600_000
     total_ms %= 3_600_000
     minutes = total_ms // 60_000
@@ -49,5 +56,6 @@ def save_srt(
             "",
         ]
 
-    path.write_text("\n".join(lines), encoding="utf-8")
+    # utf-8-sig (BOM) so Premiere on Korean Windows does not read this as CP949.
+    path.write_text("\n".join(lines), encoding="utf-8-sig")
     return str(path)
