@@ -34,7 +34,7 @@ function api() {
 
 function waitForApi() {
   return new Promise((resolve) => {
-    if (window.pywebview) return resolve();
+    if (window.pywebview && window.pywebview.api) return resolve();
     window.addEventListener('pywebviewready', resolve);
   });
 }
@@ -79,8 +79,10 @@ dropzone.addEventListener('drop', async (e) => {
   if (e.dataTransfer.files.length > 0) {
     const f = e.dataTransfer.files[0];
     if (!api()) return;
-    const result = await api().handle_drop(f.name);
+    const droppedPath = f.path || f.name;
+    const result = await api().handle_drop(droppedPath);
     if (result) setFile(result);
+    else addLog('[ERR] 드롭된 파일 경로를 확인할 수 없습니다. 파일 선택을 사용하세요.');
   }
 });
 
@@ -91,6 +93,18 @@ function setFile(info) {
   dropzone.classList.add('hidden');
   fileLoaded.classList.remove('hidden');
   updateGenerateBtn();
+}
+
+window.setFileFromPython = function (info) {
+  if (info) setFile(info);
+};
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 fileRemove.addEventListener('click', () => {
@@ -105,20 +119,24 @@ async function loadModels() {
   if (!api()) return;
   const models = await api().get_models();
   modelList.innerHTML = '';
-  models.forEach((m, i) => {
+  selectedModel = null;
+  let picked = false;
+  models.forEach((m) => {
+    const installed = Boolean(m.installed || m.ready);
+    const badgeLabel = m.ready ? 'Ready' : (installed ? 'Need GPU' : 'Download');
     const card = document.createElement('div');
-    card.className = 'model-card' + (i === 0 && m.ready ? ' selected' : '') + (!m.ready ? '' : '');
+    card.className = 'model-card' + (m.ready && !picked ? ' selected' : '');
     card.dataset.name = m.name;
     card.innerHTML = `
       <div class="mc-header">
-        <span class="mc-name">${m.label}</span>
-        <span class="mc-badge ${m.ready ? 'badge-ok' : 'badge-need'}">${m.ready ? 'Ready' : 'Download'}</span>
+        <span class="mc-name">${escapeHtml(m.label)}</span>
+        <span class="mc-badge ${m.ready ? 'badge-ok' : 'badge-need'}">${badgeLabel}</span>
       </div>
-      <div class="mc-desc">${m.desc}</div>
+      <div class="mc-desc">${escapeHtml(m.desc)}</div>
       <div class="mc-tags">
-        ${m.tags.map((t) => `<span class="mc-tag${t.includes('GPU') ? ' gpu' : ''}">${t}</span>`).join('')}
+        ${m.tags.map((t) => `<span class="mc-tag${t.includes('GPU') ? ' gpu' : ''}">${escapeHtml(t)}</span>`).join('')}
       </div>
-      ${!m.ready ? `<button class="mc-download-btn" data-model="${m.name}">다운로드</button>
+      ${!installed ? `<button class="mc-download-btn" data-model="${escapeHtml(m.name)}">다운로드</button>
         <div class="mc-dl-bar hidden"><div class="mc-dl-bar-fill"></div></div>
         <div class="mc-dl-text hidden"></div>` : ''}
     `;
@@ -129,7 +147,10 @@ async function loadModels() {
 
     modelList.appendChild(card);
 
-    if (i === 0 && m.ready) selectedModel = m.name;
+    if (m.ready && !picked) {
+      selectedModel = m.name;
+      picked = true;
+    }
   });
 
   // Download buttons
@@ -250,9 +271,9 @@ function showSrt(srtText, srtPath) {
     const div = document.createElement('div');
     div.className = 'srt-block';
     div.innerHTML = `
-      <div class="idx">${lines[0]}</div>
-      <div class="time">${lines[1] || ''}</div>
-      <div class="text">${lines.slice(2).join('<br>')}</div>
+      <div class="idx">${escapeHtml(lines[0])}</div>
+      <div class="time">${escapeHtml(lines[1] || '')}</div>
+      <div class="text">${lines.slice(2).map(escapeHtml).join('<br>')}</div>
     `;
     srtBody.appendChild(div);
   });
@@ -271,7 +292,12 @@ btnCopy.addEventListener('click', () => {
 
 btnSave.addEventListener('click', async () => {
   if (!api() || !window._srtPath) return;
-  await api().save_srt_dialog(window._srtPath);
+  const result = await api().save_srt_dialog(window._srtPath);
+  if (result && result.success) {
+    addLog(`[OK] SRT 저장: ${result.path}`);
+  } else if (result && result.message && result.message !== 'cancelled') {
+    addLog(`[ERR] SRT 저장 실패: ${result.message}`);
+  }
 });
 
 /* ── Log ── */
